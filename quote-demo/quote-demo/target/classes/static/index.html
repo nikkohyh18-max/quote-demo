@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>报价展示</title>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 24px 16px 40px;
+            box-sizing: border-box;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            padding: 32px 60px;
+            text-align: center;
+        }
+        .card h2 {
+            margin: 0 0 24px 0;
+            color: #333;
+        }
+        .field {
+            margin: 12px 0;
+            font-size: 18px;
+        }
+        .field .label {
+            color: #888;
+        }
+        .field .value {
+            color: #222;
+            font-weight: bold;
+            font-size: 22px;
+        }
+        .price .value {
+            color: #e74c3c;
+            font-size: 32px;
+        }
+        .field .ago {
+            color: #999;
+            font-size: 14px;
+            margin-left: 6px;
+        }
+        .field .ago.stale {
+            color: #e67e22;
+        }
+
+        .history {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            padding: 24px 28px;
+            margin-top: 24px;
+            width: 100%;
+            max-width: 1000px;
+            box-sizing: border-box;
+        }
+        .history h2 {
+            margin: 0 0 6px 0;
+            color: #333;
+            font-size: 20px;
+        }
+        .history .meta {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 14px;
+        }
+        .history .meta .warn {
+            color: #e74c3c;
+        }
+        .table-wrap {
+            max-height: 460px;
+            overflow: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead th {
+            position: sticky;
+            top: 0;
+            background: #fafafa;
+            color: #666;
+            font-weight: normal;
+            text-align: right;
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee;
+            white-space: nowrap;
+        }
+        tbody td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #f2f2f2;
+            text-align: right;
+            white-space: nowrap;
+            color: #333;
+        }
+        thead th:first-child, tbody td:first-child,
+        thead th.left, tbody td.left {
+            text-align: left;
+        }
+        tbody td.price-cell {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        td.buy { color: #27ae60; }
+        td.sell { color: #c0392b; }
+        tbody tr.fresh {
+            animation: flash 1.2s ease-out;
+        }
+        @keyframes flash {
+            from { background: #fdf3d7; }
+            to { background: transparent; }
+        }
+        tbody tr.gap td {
+            border-top: 2px dashed #e67e22;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>实时报价</h2>
+        <div class="field">
+            <span class="label">报价序列号：</span>
+            <span class="value" id="serialNo">--</span>
+        </div>
+        <div class="field price">
+            <span class="label">价格：</span>
+            <span class="value" id="price">--</span>
+        </div>
+        <div class="field">
+            <span class="label">报价人：</span>
+            <span class="value" id="quotePerson">--</span>
+        </div>
+        <div class="field">
+            <span class="label">报价机构：</span>
+            <span class="value" id="quoteOrg">--</span>
+        </div>
+        <div class="field">
+            <span class="label">报价日期：</span>
+            <span class="value" id="quoteDate">--</span>
+        </div>
+        <div class="field">
+            <span class="label">报价量：</span>
+            <span class="value" id="quoteVolume">--</span>
+        </div>
+        <div class="field">
+            <span class="label">报价方向：</span>
+            <span class="value" id="quoteDirection">--</span>
+        </div>
+        <div class="field">
+            <span class="label">清算速度：</span>
+            <span class="value" id="settleSpeed">--</span>
+        </div>
+        <div class="field">
+            <span class="label">报价时间：</span>
+            <span class="value" id="time">--</span>
+            <span class="ago" id="timeAgo"></span>
+        </div>
+        <div class="field">
+            <span class="label">当前时间：</span>
+            <span class="value" id="clock">--</span>
+        </div>
+    </div>
+
+    <div class="history">
+        <h2>报价流水</h2>
+        <div class="meta">
+            本页已收到 <span id="rowCount">0</span> 条<span id="gapNote"></span>
+            · <span id="connMode">连接中…</span>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>序列号</th>
+                        <th class="left">报价时间</th>
+                        <th>价格</th>
+                        <th>方向</th>
+                        <th>报价量</th>
+                        <th class="left">报价人</th>
+                        <th class="left">报价机构</th>
+                        <th class="left">清算速度</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 流水只存在于这个页面里：后端不保存历史，刷新即清零。
+        // MAX_ROWS 是页面自己的上限，超出后丢弃最旧的行。
+        var MAX_ROWS = 500;
+
+        function updateClock() {
+            var now = new Date();
+            var h = String(now.getHours()).padStart(2, '0');
+            var m = String(now.getMinutes()).padStart(2, '0');
+            var s = String(now.getSeconds()).padStart(2, '0');
+            document.getElementById('clock').textContent = h + ':' + m + ':' + s;
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+
+        // "yyyy-MM-dd HH:mm:ss.SSS" -> Date（不依赖浏览器对该格式的宽容解析；毫秒段可选）
+        function parseQuoteTime(str) {
+            var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(str || '');
+            if (!m) { return null; }
+            return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6], +(m[7] || 0));
+        }
+
+        var quoteTime = null;
+        function renderTimeAgo() {
+            var agoEl = document.getElementById('timeAgo');
+            if (quoteTime === null) {
+                agoEl.textContent = '';
+                return;
+            }
+            var ms = Date.now() - quoteTime.getTime();
+            if (ms < 0) { ms = 0; }
+            var sec = ms / 1000;
+            agoEl.textContent = sec < 60
+                ? '（' + sec.toFixed(1) + ' 秒前）'
+                : '（' + Math.floor(sec / 60) + ' 分 ' + (Math.floor(sec) % 60) + ' 秒前）';
+            // 超过生成间隔的若干倍还没新报价，标黄提示
+            agoEl.className = sec > 10 ? 'ago stale' : 'ago';
+        }
+        // 100ms 刷新，"x.x 秒前" 才是连续走动的
+        setInterval(renderTimeAgo, 100);
+
+        function renderLatest(data) {
+            document.getElementById('serialNo').textContent = data.serialNo;
+            var priceEl = document.getElementById('price');
+            priceEl.textContent = data.price.toFixed(4);
+            priceEl.style.transition = 'none';
+            priceEl.style.color = '#f39c12';
+            setTimeout(function() {
+                priceEl.style.transition = 'color 0.6s';
+                priceEl.style.color = '#e74c3c';
+            }, 50);
+            document.getElementById('quotePerson').textContent = data.quotePerson;
+            document.getElementById('quoteOrg').textContent = data.quoteOrg;
+            document.getElementById('quoteDate').textContent = data.quoteDate;
+            document.getElementById('quoteVolume').textContent = data.quoteVolume;
+            document.getElementById('quoteDirection').textContent = data.quoteDirection;
+            document.getElementById('settleSpeed').textContent = data.settleSpeed;
+            document.getElementById('time').textContent = data.time;
+            quoteTime = parseQuoteTime(data.time);
+            renderTimeAgo();
+        }
+
+        function cell(row, text, className) {
+            var td = row.insertCell();
+            td.textContent = text;
+            if (className) { td.className = className; }
+        }
+
+        function prependRow(q, isGap, animate) {
+            var body = document.getElementById('historyBody');
+            var row = body.insertRow(0);
+            if (animate) { row.className = 'fresh'; }
+            if (isGap) { row.className = row.className ? row.className + ' gap' : 'gap'; }
+            cell(row, q.serialNo);
+            cell(row, q.time, 'left');
+            cell(row, q.price.toFixed(4), 'price-cell');
+            cell(row, q.quoteDirection, q.quoteDirection === '买入' ? 'buy' : 'sell');
+            cell(row, q.quoteVolume);
+            cell(row, q.quotePerson, 'left');
+            cell(row, q.quoteOrg, 'left');
+            cell(row, q.settleSpeed, 'left');
+            while (body.rows.length > MAX_ROWS) {
+                body.deleteRow(body.rows.length - 1);
+            }
+        }
+
+        var lastSerialNo = 0;
+        var received = 0;
+        var missed = 0;
+        var firstLoad = true;
+
+        function setMode(text, warn) {
+            var el = document.getElementById('connMode');
+            el.textContent = text;
+            el.className = warn ? 'warn' : '';
+        }
+
+        // 单条入账。序列号去重：重连后可能重复收到同一条，多发无害。
+        function accept(q) {
+            if (q.serialNo <= lastSerialNo) { return; }
+            // 后端不存历史，断线期间的报价拿不回来，这里把缺口标出来
+            var isGap = !firstLoad && lastSerialNo > 0 && q.serialNo > lastSerialNo + 1;
+            if (isGap) { missed += q.serialNo - lastSerialNo - 1; }
+            prependRow(q, isGap, !firstLoad);
+            lastSerialNo = q.serialNo;
+            received++;
+            renderLatest(q);
+            document.getElementById('rowCount').textContent = received;
+            document.getElementById('gapNote').textContent = missed > 0 ? '，缺 ' + missed + ' 条' : '';
+            document.getElementById('gapNote').className = missed > 0 ? 'warn' : '';
+        }
+
+        // —— 回退方案：浏览器不支持 SSE 或连不上时，退回 1 秒轮询 ——
+        var pollTimer = null;
+        function startPolling() {
+            if (pollTimer !== null) { return; }
+            // 后端只返回最新一条，出价快于轮询周期时这条路径会漏
+            setMode('轮询中（1 秒，可能漏条）', true);
+            var poll = function() {
+                fetch('/api/quotes?since=' + lastSerialNo)
+                    .then(function(res) { return res.json(); })
+                    .then(function(list) {
+                        if (!list) { return; }
+                        for (var i = 0; i < list.length; i++) { accept(list[i]); }
+                        firstLoad = false;
+                    })
+                    .catch(function() {});
+            };
+            poll();
+            pollTimer = setInterval(poll, 1000);
+        }
+
+        // —— 首选方案：SSE，报价一生成就推过来，延迟只剩网络往返 ——
+        // 后端不存历史，订阅者从下一条开始收；重连期间产生的报价补不回来，
+        // 只能靠 accept() 里的序列号跳变把缺口标出来。
+        function startStream() {
+            if (typeof EventSource === 'undefined') {
+                startPolling();
+                return;
+            }
+            var es = new EventSource('/api/quotes/stream');
+            es.onopen = function() { setMode('推送已连接（SSE）', false); };
+            es.addEventListener('quote', function(evt) {
+                accept(JSON.parse(evt.data));
+                firstLoad = false;
+            });
+            es.onerror = function() {
+                if (es.readyState === EventSource.CLOSED) {
+                    // 连接彻底关闭且不会自动重连，退回轮询
+                    startPolling();
+                } else {
+                    setMode('推送重连中…', true);
+                }
+            };
+        }
+
+        startStream();
+    </script>
+</body>
+</html>

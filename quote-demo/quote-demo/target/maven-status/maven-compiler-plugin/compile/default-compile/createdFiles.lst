@@ -1,0 +1,3 @@
+com\demo\quote\model\Quote.class
+com\demo\quote\controller\QuoteController.class
+com\demo\quote\QuoteApplication.class
